@@ -854,13 +854,20 @@ function openGoalForm() {
   });
 }
 
+// Cores extras oferecidas no formulário de categoria, além da paleta padrão e do seletor livre.
+const EXTRA_COLORS = ['#0ea5e9', '#14b8a6', '#84cc16', '#a855f7', '#be185d', '#92400e', '#334155'];
+
 function openCategoryForm(cat, kind) {
   const f = cat ? { ...cat } : { name: '', icon: 'tag', color: PALETTE[0], kind };
-  const colors = [...PALETTE, NEUTRAL];
+  const colors = [...PALETTE, ...EXTRA_COLORS, NEUTRAL];
+  const isCustom = () => !colors.includes(f.color);
   // Seleção de cor/ícone só atualiza a prévia, para não perder o foco do campo de nome.
   const refreshPreview = (body) => {
     body.querySelector('.cat-preview').outerHTML = catDot(f, 'lg cat-preview');
     body.querySelectorAll('.swatch-btn').forEach((b) => b.classList.toggle('on', b.dataset.c === f.color));
+    const custom = body.querySelector('.swatch-custom');
+    custom.classList.toggle('on', isCustom());
+    custom.style.setProperty('--c', f.color);
     body.querySelectorAll('.icon-pick').forEach((b) => b.classList.toggle('on', b.dataset.icon === f.icon));
     body.querySelector('.icon-gallery').style.setProperty('--c', f.color);
   };
@@ -870,7 +877,10 @@ function openCategoryForm(cat, kind) {
       ${catDot(f, 'lg cat-preview')}
       <label class="field"><span>Nome</span><input class="input" data-bind="name" value="${esc(f.name)}" placeholder="Ex.: Pets"></label>
     </div>
-    <div class="field"><span>Cor</span><div class="swatches">${colors.map((c) => `<button type="button" class="swatch-btn ${f.color === c ? 'on' : ''}" style="background:${c}" data-s="color" data-c="${c}" aria-label="Cor ${c}"></button>`).join('')}</div></div>
+    <div class="field"><span>Cor</span><div class="swatches">${colors.map((c) => `<button type="button" class="swatch-btn ${f.color === c ? 'on' : ''}" style="background:${c}" data-s="color" data-c="${c}" aria-label="Cor ${c}"></button>`).join('')}
+      <label class="swatch-btn swatch-custom ${isCustom() ? 'on' : ''}" style="--c:${f.color}" title="Escolher outra cor">
+        <input type="color" class="color-input" value="${f.color}" aria-label="Escolher outra cor">
+      </label></div></div>
     <div class="field"><span>Ícone</span>
       <div class="icon-gallery" style="--c:${f.color}">
         ${ICON_GROUPS.map((g) => `<div class="icon-group-label">${g.label}</div>
@@ -883,6 +893,7 @@ function openCategoryForm(cat, kind) {
     </div>`,
   (body, redraw) => {
     bindForm(body, f, redraw);
+    body.querySelector('.color-input').addEventListener('input', (ev) => { f.color = ev.target.value; refreshPreview(body); });
     body.addEventListener('click', (ev) => {
       const el = ev.target.closest('[data-s]');
       if (!el) return;
