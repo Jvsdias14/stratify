@@ -132,6 +132,33 @@ function viewHome() {
     ? `<div class="card hint"><div>${icon('info', 18)}</div><p>Para usar como app: toque em <strong>Compartilhar</strong> no Safari e depois em <strong>Adicionar à Tela de Início</strong>.</p><button class="icon-btn sm" data-action="dismiss-hint" aria-label="Fechar">${icon('close', 16)}</button></div>`
     : '';
 
+  // Meta de sobra: 6 meses antes, o mês selecionado e 5 depois.
+  const goal = store.data.goals.monthlySurplus || 0;
+  const gMonths = Array.from({ length: 12 }, (_, i) => addMonths(ym, i - 6));
+  const gTotals = gMonths.map((m) => (m === ym ? t : monthTotals(m)));
+  const gFuture = gMonths.map((m) => m > currentYM());
+  const gPast = gMonths.map((m, i) => i).filter((i) => gMonths[i] < currentYM() && gTotals[i].entries.length);
+  const gHits = gPast.filter((i) => gTotals[i].balance >= goal).length;
+  const gPct = goal > 0 ? (Math.max(0, t.balance) / goal) * 100 : 0;
+  const gMet = goal > 0 && t.balance >= goal;
+  const projected = ym >= currentYM();
+  const goalCard = `
+    <section class="card">
+      <div class="card-head"><h2>Meta de sobra</h2><button class="link" data-action="edit-goal">${goal ? 'Editar' : 'Definir meta'}</button></div>
+      ${goal ? `
+        <div class="goal-top">
+          <div><span class="muted small">Sobra ${projected ? 'prevista ' : ''}em ${monthShort(ym).toLowerCase()}</span><strong class="${t.balance < 0 ? 'neg' : ''}">${money(t.balance)}</strong></div>
+          <div class="goal-target"><span class="muted small">Meta mensal</span><strong>${money(goal)}</strong></div>
+        </div>
+        <div class="meter ${gMet ? 'met' : ''}" role="progressbar" aria-valuenow="${Math.round(gPct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${Math.min(100, gPct)}%"></i></div>
+        <p class="goal-status ${gMet ? 'ok' : ''}">${gMet
+          ? `${icon('check', 15)} Meta atingida${t.balance > goal ? ` · ${money(t.balance - goal)} acima` : ''}`
+          : `Faltam <strong>${money(goal - t.balance)}</strong> · ${num(gPct, 0)}% da meta`}</p>
+        <div class="chart-box"><canvas id="ch-goal" role="img" aria-label="Sobra mensal comparada à meta"></canvas></div>
+        <p class="muted small chart-note">${gPast.length ? `Bateu a meta em <strong>${gHits} de ${gPast.length}</strong> meses anteriores. ` : ''}${gFuture.some(Boolean) ? 'Barras claras = previsão.' : ''}</p>`
+      : `<p class="card-sub">Defina quanto quer que sobre por mês (receitas − despesas) e acompanhe mês a mês.</p>`}
+    </section>`;
+
   const lastBackup = getLastBackup();
   const backupHint = backupOverdue()
     ? `<div class="card hint"><div>${icon('download', 18)}</div><p>${lastBackup ? `Último backup em ${dateBR(lastBackup)}.` : 'Você ainda não fez backup.'} Guarde uma cópia dos seus dados fora do navegador.</p><button class="btn soft sm-btn" data-action="export">Exportar</button></div>`
@@ -153,6 +180,8 @@ function viewHome() {
       <div class="stat"><span>Fixas</span><strong>${money(t.fixed)}</strong></div>
       <div class="stat"><span>Variáveis</span><strong>${money(t.variable)}</strong></div>
     </div>
+
+    ${hasData || goal ? goalCard : ''}
 
     ${!hasData ? `<div class="card">${empty('Nada em ' + monthLabel(ym), 'Cadastre seu salário, contas fixas e gastos para ver os gráficos.',
       `<div class="btn-row"><button class="btn primary" data-action="add">Novo lançamento</button><button class="btn soft" data-action="add-fixed" data-kind="income">Cadastrar salário</button></div>`)}</div>` : ''}
@@ -228,6 +257,7 @@ function viewHome() {
       return;
     }
     if (items.length) Charts.donut('ch-donut', items);
+    if (goal) Charts.goalBars('ch-goal', gMonths.map(monthShort), gTotals.map((g) => g.balance), goal, gFuture);
     Charts.incomeExpenseBars('ch-bars', months.map(preset.span > 6 ? monthShortYear : monthShort), series.map((s) => s.income), series.map((s) => s.expense), future);
     const dim = Math.max(daysInMonth(ym), daysInMonth(prevYm));
     const upto = isCurrent ? Number(todayISO().slice(8)) : null;
@@ -324,14 +354,40 @@ function viewFixed() {
   return { html };
 }
 
+const INV_PARAMS = ['depositMode', 'monthlyDeposit', 'depositPercent', 'depositDay', 'cdiAnnual', 'cdiPercent', 'irRate', 'includeSurplus'];
+const invParams = (inv) => Object.fromEntries(INV_PARAMS.map((k) => [k, inv[k]]));
+const isInvDirty = () => !!ui.invDraft && INV_PARAMS.some((k) => ui.invDraft[k] !== store.data.investments[k]);
+
+function saveInvParams() {
+  const d = { ...ui.invDraft };
+  const bad = (v) => typeof v !== 'number' || !Number.isFinite(v);
+  if (bad(d.cdiAnnual) || d.cdiAnnual < 0) return toast('CDI anual inválido');
+  if (bad(d.cdiPercent) || d.cdiPercent <= 0) return toast('% do CDI inválido');
+  if (d.depositMode === 'percent' && (bad(d.depositPercent) || d.depositPercent < 0 || d.depositPercent > 100)) return toast('Percentual deve ser de 0 a 100');
+  if (bad(d.depositDay)) return toast('Dia do aporte inválido');
+  d.depositDay = Math.min(31, Math.max(1, Math.round(d.depositDay)));
+  d.monthlyDeposit = round2(d.monthlyDeposit || 0);
+  Object.assign(store.data.investments, d);
+  ui.invDraft = null;
+  save();
+  toast('Parâmetros salvos');
+}
+
 function viewInvest() {
   const inv = store.data.investments;
   const today = todayISO();
   const ym = currentYM();
   const t = monthTotals(ym);
-  const fc = monthForecast(inv, today, t.balance);
-  const proj = projectMonths(inv, fc.endBalance, ym, ui.horizon);
+  const surplusFor = (m) => (m === ym ? t.balance : monthTotals(m).balance);
+  const fc = monthForecast(inv, today, surplusFor);
+  const proj = projectMonths(inv, fc.endBalance, ym, ui.horizon, surplusFor);
   const last = proj[proj.length - 1];
+  const draft = ui.invDraft || (ui.invDraft = invParams(inv));
+  const isPct = draft.depositMode === 'percent';
+  const avgDeposit = proj.reduce((s, r) => s + r.deposit, 0) / proj.length;
+  const depositText = inv.depositMode === 'percent'
+    ? `aporte de ${num(inv.depositPercent, 1)}% da sobra prevista (média de ${money(avgDeposit)}/mês)`
+    : `aporte de ${money(inv.monthlyDeposit)}/mês`;
   const leftover = round2(t.balance - fc.plannedThisMonth - fc.surplusAdded);
   const hist = [...inv.history].sort((a, b) => (a.date < b.date ? -1 : 1));
   const irOptions = [[22.5, 'até 180 dias'], [20, '181 a 360 dias'], [17.5, '361 a 720 dias'], [15, 'acima de 720 dias']];
@@ -362,7 +418,7 @@ function viewInvest() {
       <div class="card-head"><h2>Fechamento de ${monthShort(ym).toLowerCase()}</h2></div>
       <dl class="kv">
         <div><dt>Sobra do mês (receitas − despesas)</dt><dd class="${t.balance < 0 ? 'neg' : ''}">${money(t.balance)}</dd></div>
-        <div><dt>Aporte planejado neste mês</dt><dd>${money(fc.plannedThisMonth)}</dd></div>
+        <div><dt>Aporte planejado${inv.depositMode === 'percent' ? ` (${num(inv.depositPercent, 1)}% da sobra)` : ''}</dt><dd>${money(fc.plannedThisMonth)}</dd></div>
         <div><dt>Sobra enviada ao cofrinho</dt><dd>${money(fc.surplusAdded)}</dd></div>
         <div><dt>Cofrinho no fim do mês</dt><dd>${money(fc.endBalance)}</dd></div>
         <div><dt>Fica em conta</dt><dd class="${leftover < 0 ? 'neg' : ''}">${money(leftover)}</dd></div>
@@ -373,22 +429,30 @@ function viewInvest() {
 
     <section class="card">
       <div class="card-head"><h2>Parâmetros</h2></div>
-      <div class="form-grid">
-        <label class="field"><span>CDI anual (%)</span><input class="input" data-inv="cdiAnnual" data-type="number" inputmode="decimal" value="${num(inv.cdiAnnual, 2)}"></label>
-        <label class="field"><span>% do CDI</span><input class="input" data-inv="cdiPercent" data-type="number" inputmode="decimal" value="${num(inv.cdiPercent, 2)}"></label>
-        <label class="field"><span>Aporte mensal</span><input class="input" data-inv="monthlyDeposit" data-type="money" inputmode="numeric" value="${inv.monthlyDeposit ? money(inv.monthlyDeposit) : ''}" placeholder="R$ 0,00"></label>
-        <label class="field"><span>Dia do aporte</span><input class="input" data-inv="depositDay" data-type="number" inputmode="numeric" value="${inv.depositDay}"></label>
-        <label class="field full"><span>Alíquota de IR (tempo aplicado)</span>
-          <select class="input" data-inv="irRate" data-type="number">${irOptions.map(([v, l]) => `<option value="${v}" ${inv.irRate === v ? 'selected' : ''}>${num(v, 1)}% · ${l}</option>`).join('')}</select></label>
-        <label class="switch full"><input type="checkbox" data-inv="includeSurplus" ${inv.includeSurplus ? 'checked' : ''}><span class="switch-ui"></span><span>Guardar no cofrinho a sobra do mês (após o aporte)</span></label>
+      <div class="field"><span>Aporte mensal</span>
+        <div class="seg">${[['fixed', 'Valor fixo'], ['percent', '% da sobra']].map(([v, l]) => `<button class="${draft.depositMode === v ? 'on' : ''}" data-action="inv-mode" data-mode="${v}">${l}</button>`).join('')}</div>
       </div>
+      <div class="form-grid params">
+        ${isPct
+          ? `<label class="field"><span>% da sobra</span><input class="input" data-draft="depositPercent" data-type="number" inputmode="decimal" value="${num(draft.depositPercent, 2)}"></label>`
+          : `<label class="field"><span>Valor do aporte</span><input class="input" data-draft="monthlyDeposit" data-type="money" inputmode="numeric" value="${draft.monthlyDeposit ? money(draft.monthlyDeposit) : ''}" placeholder="R$ 0,00"></label>`}
+        <label class="field"><span>Dia do aporte</span><input class="input" data-draft="depositDay" data-type="number" inputmode="numeric" value="${draft.depositDay}"></label>
+        ${isPct ? `<p class="muted small full">Sobra prevista em ${monthShort(ym).toLowerCase()}: ${money(t.balance)}. Meses com sobra negativa não têm aporte.</p>` : ''}
+        <label class="field"><span>CDI anual (%)</span><input class="input" data-draft="cdiAnnual" data-type="number" inputmode="decimal" value="${num(draft.cdiAnnual, 2)}"></label>
+        <label class="field"><span>% do CDI</span><input class="input" data-draft="cdiPercent" data-type="number" inputmode="decimal" value="${num(draft.cdiPercent, 2)}"></label>
+        <label class="field full"><span>Alíquota de IR (tempo aplicado)</span>
+          <select class="input" data-draft="irRate" data-type="number">${irOptions.map(([v, l]) => `<option value="${v}" ${draft.irRate === v ? 'selected' : ''}>${num(v, 1)}% · ${l}</option>`).join('')}</select></label>
+        <label class="switch full"><input type="checkbox" data-draft="includeSurplus" ${draft.includeSurplus ? 'checked' : ''}><span class="switch-ui"></span><span>Guardar no cofrinho o restante da sobra (após o aporte)</span></label>
+      </div>
+      <p class="unsaved" id="inv-dirty" ${isInvDirty() ? '' : 'hidden'}>Alterações não salvas</p>
+      <button class="btn primary block" data-action="inv-save">Salvar parâmetros</button>
       <p class="muted small">Cofrinho PicPay: ${num(inv.cdiPercent, 0)}% do CDI, rendimento diário em dias úteis (feriados nacionais considerados). Confira o CDI atual e ajuste aqui.</p>
     </section>
 
     <section class="card">
       <div class="card-head"><h2>Projeção</h2>
         <div class="seg sm">${[6, 12, 24, 36].map((h) => `<button class="${ui.horizon === h ? 'on' : ''}" data-action="horizon" data-h="${h}">${h}m</button>`).join('')}</div></div>
-      <p class="card-sub">Com aporte de ${money(inv.monthlyDeposit)}/mês, em ${monthLabel(last.ym).toLowerCase()} você teria <strong>${money(last.balance)}</strong>, sendo <strong>${money(last.gained)}</strong> de rendimentos (bruto).</p>
+      <p class="card-sub">Com ${depositText}, em ${monthLabel(last.ym).toLowerCase()} você teria <strong>${money(last.balance)}</strong>, sendo <strong>${money(last.gained)}</strong> de rendimentos (bruto).</p>
       <div class="chart-box tall"><canvas id="ch-proj" role="img" aria-label="Projeção do cofrinho"></canvas></div>
       <details class="table-toggle"><summary>Ver tabela</summary>
         <table class="mini-table"><thead><tr><th>Mês</th><th>Saldo</th><th>Rend. mês</th></tr></thead>
@@ -407,19 +471,17 @@ function viewInvest() {
 
   const mount = () => {
     const view = $('#view');
-    view.querySelectorAll('[data-inv]').forEach((el) => {
-      if (el.dataset.type === 'money') el.addEventListener('input', () => maskMoney(el));
-      el.addEventListener('change', () => {
-        const key = el.dataset.inv;
-        let v;
-        if (el.type === 'checkbox') v = el.checked;
-        else if (el.dataset.type === 'money') v = moneyValue(el);
-        else v = parseNumber(el.value);
-        if (typeof v === 'number' && !Number.isFinite(v)) return toast('Valor inválido');
-        if (key === 'depositDay') v = Math.min(31, Math.max(1, Math.round(v)));
-        inv[key] = v;
-        save();
-      });
+    // Edições ficam no rascunho (ui.invDraft) até tocar em "Salvar parâmetros".
+    view.querySelectorAll('[data-draft]').forEach((el) => {
+      const update = (ev) => {
+        const key = el.dataset.draft;
+        if (el.type === 'checkbox') draft[key] = el.checked;
+        else if (el.dataset.type === 'money') { if (ev.type === 'input') draft[key] = maskMoney(el); }
+        else draft[key] = parseNumber(el.value);
+        $('#inv-dirty').hidden = !isInvDirty();
+      };
+      el.addEventListener('input', update);
+      el.addEventListener('change', update);
     });
     if (!Charts.available()) return;
     Charts.projectionBars('ch-proj', proj.map((r) => monthShortYear(r.ym)), proj.map((r) => r.principal), proj.map((r) => r.gained));
@@ -765,6 +827,33 @@ function openBalanceForm() {
   });
 }
 
+function openGoalForm() {
+  const goals = store.data.goals;
+  const f = { amount: goals.monthlySurplus || 0 };
+  const recent = Array.from({ length: 3 }, (_, i) => monthTotals(addMonths(currentYM(), -1 - i)).balance);
+  const avg = recent.reduce((s, v) => s + v, 0) / recent.length;
+  openSheet(() => `
+    ${sheetHead('Meta de sobra mensal')}
+    <p class="card-sub">Quanto você quer que sobre por mês depois de todas as despesas. Média dos últimos 3 meses: <strong>${money(avg)}</strong>.</p>
+    <label class="amount-field"><span>Meta</span><input data-bind="amount" data-type="money" inputmode="numeric" value="${f.amount ? money(f.amount) : ''}" placeholder="R$ 0,00"></label>
+    <button class="btn primary block lg" data-s="save">Salvar meta</button>
+    ${goals.monthlySurplus ? '<button class="btn danger-ghost block" data-s="remove">Remover meta</button>' : ''}`,
+  (body, redraw) => {
+    bindForm(body, f, redraw);
+    body.addEventListener('click', (ev) => {
+      const a = ev.target.closest('[data-s]')?.dataset.s;
+      if (a === 'close') return closeSheet();
+      if (a === 'save') {
+        if (!(f.amount > 0)) return toast('Informe um valor');
+        goals.monthlySurplus = round2(f.amount);
+        return done('Meta salva');
+      }
+      if (a === 'remove') { goals.monthlySurplus = 0; done('Meta removida'); }
+    });
+    setTimeout(() => body.querySelector('[data-bind="amount"]')?.focus(), 350);
+  });
+}
+
 function openCategoryForm(cat, kind) {
   const f = cat ? { ...cat } : { name: '', icon: 'tag', color: PALETTE[0], kind };
   const colors = [...PALETTE, NEUTRAL];
@@ -857,6 +946,8 @@ async function exportData() {
 const actions = {
   nav: (el) => {
     if (el.dataset.view === ui.view) return window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (isInvDirty() && !confirm('Há parâmetros de rendimento não salvos. Descartar?')) return;
+    ui.invDraft = null;
     if (el.dataset.view === 'settings') ui.prevView = ui.view;
     ui.view = el.dataset.view;
     render({ keepScroll: false });
@@ -890,6 +981,9 @@ const actions = {
   'bar-shift': (el) => { ui.barShift += Number(el.dataset.step); render(); },
   horizon: (el) => { ui.horizon = Number(el.dataset.h); render(); },
   'update-balance': () => openBalanceForm(),
+  'inv-mode': (el) => { ui.invDraft.depositMode = el.dataset.mode; render(); },
+  'inv-save': () => saveInvParams(),
+  'edit-goal': () => openGoalForm(),
   'edit-cat': (el) => openCategoryForm(store.data.categories.find((c) => c.id === el.dataset.id)),
   'add-cat': (el) => openCategoryForm(null, el.dataset.kind),
   'close-sheet': () => closeSheet(),

@@ -8,6 +8,7 @@ export const COLORS = {
   previous: '#b4bacb',
   principal: '#2a78d6',
   gained: '#1baf7a',
+  goal: '#6250d6',    // slot 7 (violeta)
   grid: '#e9ecf4',
   axis: '#d5d9e6',
   muted: '#8a90a2',
@@ -96,6 +97,39 @@ export function incomeExpenseBars(id, labels, income, expense, future = []) {
       plugins: {
         legend: { position: 'top', align: 'start', labels: { generateLabels: (chart) => window.Chart.defaults.plugins.legend.labels.generateLabels(chart).map((l) => ({ ...l, fillStyle: chart.data.datasets[l.datasetIndex].backgroundColor.find((_, i) => !future[i]) || l.fillStyle })) } },
         tooltip: { ...moneyTooltip, callbacks: { ...moneyTooltip.callbacks, title: (items) => items[0].label + (future[items[0].dataIndex] ? ' (previsão)' : '') } },
+      },
+    },
+  });
+}
+
+// Sobra mensal (barras) contra a meta (linha tracejada).
+export function goalBars(id, labels, values, goal, future = []) {
+  const fill = labels.map((_, i) => (future[i] ? faded(COLORS.income) : COLORS.income));
+  make(id, {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar', label: 'Sobra', data: values, backgroundColor: fill, borderRadius: 4, categoryPercentage: 0.7, barPercentage: 0.85, order: 2 },
+        { type: 'line', label: 'Meta', data: labels.map(() => goal), borderColor: COLORS.goal, borderDash: [5, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 0, order: 1 },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: { ...valueScales(), y: { ...valueScales().y, beginAtZero: true }, x: { ...valueScales().x, ticks: { maxRotation: 0, autoSkip: true } } },
+      plugins: {
+        legend: { position: 'top', align: 'start', labels: { generateLabels: (chart) => window.Chart.defaults.plugins.legend.labels.generateLabels(chart).map((l) => (l.datasetIndex === 0 ? { ...l, fillStyle: COLORS.income } : { ...l, pointStyle: 'line', lineDash: [5, 4] })) } },
+        tooltip: {
+          ...moneyTooltip,
+          callbacks: {
+            ...moneyTooltip.callbacks,
+            title: (items) => items[0].label + (future[items[0].dataIndex] ? ' (previsão)' : ''),
+            footer: (items) => {
+              const v = values[items[0].dataIndex];
+              return v >= goal ? '✓ Meta atingida' : `Faltaram ${money(goal - v)}`;
+            },
+          },
+        },
       },
     },
   });

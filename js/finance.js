@@ -55,26 +55,34 @@ export function simulate(balance, fromExclusive, toInclusive, r, deposits = []) 
 
 const depositDate = (ym, day) => `${ym}-${pad(Math.min(day, daysInMonth(ym)))}`;
 
-function plannedDeposits(inv, fromExclusive, toInclusive) {
+// Aporte do mês: valor fixo ou percentual da sobra (receitas − despesas) daquele mês.
+export function depositFor(inv, surplus) {
+  if (inv.depositMode === 'percent') return round2(Math.max(0, surplus) * (inv.depositPercent || 0) / 100);
+  return inv.monthlyDeposit > 0 ? inv.monthlyDeposit : 0;
+}
+
+// surplusFor(ym) devolve a sobra prevista do mês (usada no modo percentual).
+function plannedDeposits(inv, fromExclusive, toInclusive, surplusFor) {
   const out = [];
-  if (!(inv.monthlyDeposit > 0)) return out;
   for (let ym = fromExclusive.slice(0, 7); ym <= toInclusive.slice(0, 7); ym = addMonths(ym, 1)) {
     const d = depositDate(ym, inv.depositDay);
-    if (d > fromExclusive && d <= toInclusive) out.push({ date: d, amount: inv.monthlyDeposit });
+    const amount = depositFor(inv, surplusFor(ym));
+    if (amount > 0 && d > fromExclusive && d <= toInclusive) out.push({ date: d, amount });
   }
   return out;
 }
 
 // Previsão até o fim do mês corrente, a partir do último saldo informado.
-export function monthForecast(inv, todayISO, surplus = 0) {
+export function monthForecast(inv, todayISO, surplusFor) {
   const ym = todayISO.slice(0, 7);
   const end = endOfMonth(ym);
   const from = inv.balanceDate && inv.balanceDate <= todayISO ? inv.balanceDate : todayISO;
   const r = dailyRate(inv.cdiAnnual, inv.cdiPercent);
-  const deposits = plannedDeposits(inv, from, end);
+  const deposits = plannedDeposits(inv, from, end, surplusFor);
+  const surplus = surplusFor(ym);
   // Aporte planejado do mês sai da sobra; o que restar pode ir ao cofrinho no último dia.
   // (conta mesmo se o aporte já ocorreu antes da última atualização do saldo).
-  const plannedThisMonth = inv.monthlyDeposit > 0 ? inv.monthlyDeposit : 0;
+  const plannedThisMonth = depositFor(inv, surplus);
   const extra = inv.includeSurplus ? Math.max(0, surplus - plannedThisMonth) : 0;
   if (extra) deposits.push({ date: end, amount: extra });
   const sim = simulate(inv.balance, from, end, r, deposits);
@@ -97,18 +105,18 @@ export function monthForecast(inv, todayISO, surplus = 0) {
   };
 }
 
-// Projeção mês a mês após o mês corrente, só com o aporte mensal planejado.
-export function projectMonths(inv, startBalance, startYM, months) {
+// Projeção mês a mês após o mês corrente, só com o aporte planejado.
+export function projectMonths(inv, startBalance, startYM, months, surplusFor) {
   const r = dailyRate(inv.cdiAnnual, inv.cdiPercent);
   let bal = startBalance, principal = startBalance;
   const rows = [];
   for (let i = 1; i <= months; i++) {
     const ym = addMonths(startYM, i);
     const from = endOfMonth(addMonths(ym, -1));
-    const sim = simulate(bal, from, endOfMonth(ym), r, plannedDeposits(inv, from, endOfMonth(ym)));
+    const sim = simulate(bal, from, endOfMonth(ym), r, plannedDeposits(inv, from, endOfMonth(ym), surplusFor));
     bal = sim.balance;
     principal += sim.deposited;
-    rows.push({ ym, balance: round2(bal), principal: round2(principal), gained: round2(bal - principal), monthGain: round2(sim.gained) });
+    rows.push({ ym, balance: round2(bal), principal: round2(principal), gained: round2(bal - principal), monthGain: round2(sim.gained), deposit: round2(sim.deposited) });
   }
   return rows;
 }

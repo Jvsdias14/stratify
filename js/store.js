@@ -30,12 +30,15 @@ function defaults() {
       balanceDate: todayISO(),
       cdiAnnual: 14.15,
       cdiPercent: 102,
+      depositMode: 'fixed', // 'fixed' | 'percent'
       monthlyDeposit: 0,
+      depositPercent: 50,   // % da sobra do mês (modo percentual)
       depositDay: 5,
       irRate: 22.5,
       includeSurplus: true,
       history: [],      // [{ date, balance }]
     },
+    goals: { monthlySurplus: 0 }, // meta de sobra mensal (0 = sem meta)
   };
 }
 
@@ -57,6 +60,7 @@ function normalize(data) {
     recurring: data.recurring || [],
     recurringStatus: data.recurringStatus || {},
     investments: { ...base.investments, ...(data.investments || {}) },
+    goals: { ...base.goals, ...(data.goals || {}) },
   };
 }
 
