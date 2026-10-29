@@ -1,4 +1,7 @@
 // Ícones SVG em linha (traço 2px, herdam currentColor).
+import { CATEGORY_ICONS } from './category-icons.js';
+import { escapeHtml } from './utils.js';
+
 const paths = {
   home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
   list: '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
@@ -19,6 +22,12 @@ const paths = {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
 };
+
+// Ícone de categoria (galeria Lucide); categorias antigas com emoji continuam aparecendo.
+export const catGlyph = (name, size = 18) =>
+  CATEGORY_ICONS[name]
+    ? `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CATEGORY_ICONS[name]}</svg>`
+    : `<span class="emoji">${escapeHtml(name)}</span>`;
 
 export const icon = (name, size = 22) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;

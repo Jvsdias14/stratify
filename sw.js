@@ -1,8 +1,8 @@
 // Service worker: deixa o app abrir offline. Altere VERSION a cada deploy para forçar atualização.
-const VERSION = 'stratify-v2';
+const VERSION = 'stratify-v3';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
-  'js/app.js', 'js/store.js', 'js/finance.js', 'js/sync.js', 'js/charts.js', 'js/icons.js', 'js/utils.js',
+  'js/app.js', 'js/store.js', 'js/finance.js', 'js/sync.js', 'js/charts.js', 'js/icons.js', 'js/category-icons.js', 'js/utils.js',
   'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
 ];

@@ -61,6 +61,7 @@ js/store.js           dados, persistência local e totais do mês
 js/finance.js         dias úteis, CDI diário e projeções
 js/sync.js            sincronização com a API de conteúdos do GitHub
 js/charts.js          gráficos (Chart.js)
+js/category-icons.js  galeria de ícones das categorias (Lucide, licença ISC)
 sw.js                 cache offline
 ```
 

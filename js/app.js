@@ -5,7 +5,8 @@ import {
 import { monthForecast, projectMonths } from './finance.js';
 import * as Sync from './sync.js';
 import * as Charts from './charts.js';
-import { icon } from './icons.js';
+import { icon, catGlyph } from './icons.js';
+import { ICON_GROUPS } from './category-icons.js';
 import {
   uid, money, percent, num, parseNumber, round2, escapeHtml as esc, todayISO, currentYM, addMonths,
   daysInMonth, monthLabel, monthShort, monthShortYear, dayLabel, dateBR,
@@ -71,7 +72,7 @@ function updateSyncDot() {
 
 // ---------------------------------------------------------------- pieces
 
-const catDot = (cat, size = '') => `<span class="cat-dot ${size}" style="--c:${cat.color}" aria-hidden="true">${esc(cat.icon)}</span>`;
+const catDot = (cat, size = '') => `<span class="cat-dot ${size}" style="--c:${cat.color}" aria-hidden="true">${catGlyph(cat.icon, size.includes('lg') ? 26 : 18)}</span>`;
 
 function entryRow(e) {
   const cat = categoryById(e.categoryId);
@@ -113,7 +114,7 @@ function viewHome() {
   const cats = Object.entries(t.byCat).map(([id, value]) => ({ cat: categoryById(id), value })).sort((a, b) => b.value - a.value);
   const items = cats.slice(0, 6).map((c) => ({ label: c.cat.name, value: c.value, color: c.cat.color, icon: c.cat.icon }));
   const rest = cats.slice(6).reduce((s, c) => s + c.value, 0);
-  if (rest > 0) items.push({ label: 'Demais', value: round2(rest), color: NEUTRAL, icon: '…' });
+  if (rest > 0) items.push({ label: 'Demais', value: round2(rest), color: NEUTRAL, icon: 'circle-ellipsis' });
 
   const preset = BAR_PRESETS[ui.barPreset];
   const firstMonth = addMonths(ym, preset.start + ui.barShift * preset.span);
@@ -131,8 +132,13 @@ function viewHome() {
     ? `<div class="card hint"><div>${icon('info', 18)}</div><p>Para usar como app: toque em <strong>Compartilhar</strong> no Safari e depois em <strong>Adicionar à Tela de Início</strong>.</p><button class="icon-btn sm" data-action="dismiss-hint" aria-label="Fechar">${icon('close', 16)}</button></div>`
     : '';
 
+  const lastBackup = getLastBackup();
+  const backupHint = backupOverdue()
+    ? `<div class="card hint"><div>${icon('download', 18)}</div><p>${lastBackup ? `Último backup em ${dateBR(lastBackup)}.` : 'Você ainda não fez backup.'} Guarde uma cópia dos seus dados fora do navegador.</p><button class="btn soft sm-btn" data-action="export">Exportar</button></div>`
+    : '';
+
   const html = `
-    ${installHint}
+    ${installHint}${backupHint}
     <section class="hero">
       <div class="hero-label">Saldo de ${monthShort(ym).toLowerCase()}</div>
       <div class="hero-value">${money(t.balance)}</div>
@@ -159,7 +165,7 @@ function viewHome() {
           <div class="donut-center"><span>Total</span><strong>${money(t.expense)}</strong></div></div>
       </div>
       <ul class="legend-list">
-        ${items.map((i) => `<li><span class="swatch" style="background:${i.color}"></span><span class="lg-name">${esc(i.icon)} ${esc(i.label)}</span><span class="lg-val">${money(i.value)}</span><span class="lg-pct">${num((i.value / t.expense) * 100, 0)}%</span></li>`).join('')}
+        ${items.map((i) => `<li><span class="swatch" style="background:${i.color}"></span><span class="lg-name"><span class="lg-icon">${catGlyph(i.icon, 15)}</span>${esc(i.label)}</span><span class="lg-val">${money(i.value)}</span><span class="lg-pct">${num((i.value / t.expense) * 100, 0)}%</span></li>`).join('')}
       </ul>
     </section>` : ''}
 
@@ -207,7 +213,7 @@ function viewHome() {
       <div class="comp-legend"><span><i class="swatch" style="background:${Charts.COLORS.current}"></i>${monthShort(ym)}</span><span><i class="swatch" style="background:${Charts.COLORS.previous}"></i>${monthShort(prevYm)}</span></div>
       <ul class="comp-list">
         ${comp.map((c) => `<li>
-          <div class="comp-top"><span>${esc(c.cat.icon)} ${esc(c.cat.name)}</span><span class="comp-val">${money(c.cur)} ${deltaChip(c.cur, c.prev)}</span></div>
+          <div class="comp-top"><span class="comp-name">${catGlyph(c.cat.icon, 15)}${esc(c.cat.name)}</span><span class="comp-val">${money(c.cur)} ${deltaChip(c.cur, c.prev)}</span></div>
           <div class="comp-bar"><i style="width:${(c.cur / maxComp) * 100}%;background:${Charts.COLORS.current}"></i></div>
           <div class="comp-bar prev"><i style="width:${(c.prev / maxComp) * 100}%;background:${Charts.COLORS.previous}"></i></div>
           <div class="comp-prev muted">${monthShort(prevYm)}: ${money(c.prev)}</div>
@@ -433,10 +439,26 @@ function viewSettings() {
   const catList = (kind) => categoriesOf(kind).map((c) => `<button class="row" data-action="edit-cat" data-id="${c.id}">${catDot(c)}<span class="row-main"><span class="row-title">${esc(c.name)}</span></span>${icon('right', 16)}</button>`).join('');
   const d = store.data;
 
+  const lastBackup = getLastBackup();
+
   const html = `
     <section class="card">
-      <div class="card-head"><h2>${icon('cloud', 18)} Sincronização (GitHub)</h2></div>
-      <p class="card-sub">Salva seus dados num arquivo JSON de um repositório <strong>privado</strong>. Permite usar em vários aparelhos e mantém histórico de versões.</p>
+      <div class="card-head"><h2>${icon('download', 18)} Backup em arquivo</h2></div>
+      <p class="card-sub">Seus dados ficam só neste aparelho. Exporte um arquivo e guarde no app <strong>Arquivos</strong> (iCloud Drive) para restaurar quando precisar.</p>
+      <dl class="kv compact">
+        <div><dt>Último backup</dt><dd class="${backupOverdue() ? 'neg' : ''}">${lastBackup ? dateBR(lastBackup) : 'nunca'}</dd></div>
+        <div><dt>Conteúdo</dt><dd>${d.transactions.length} pontuais · ${d.recurring.length} fixos · ${d.categories.length} categorias</dd></div>
+      </dl>
+      <div class="btn-row">
+        <button class="btn primary" data-action="export">${icon('download', 16)} Exportar</button>
+        <label class="btn soft">${icon('upload', 16)} Importar<input type="file" id="import-file" accept="application/json,.json"></label>
+      </div>
+      <p class="muted small">Exportar abre o menu de compartilhar: escolha <strong>Salvar em Arquivos</strong>. Importar substitui os dados atuais pelos do arquivo.</p>
+    </section>
+
+    <details class="card collapsible" ${Sync.isConfigured(cfg) ? 'open' : ''}>
+      <summary class="card-head"><h2>${icon('cloud', 18)} Sincronização com GitHub <span class="badge muted">opcional</span></h2>${icon('right', 16)}</summary>
+      <p class="card-sub">Salva automaticamente num repositório <strong>privado</strong>. Útil para usar em mais de um aparelho.</p>
       <div class="form-grid">
         <label class="field"><span>Usuário / dono</span><input class="input" id="s-owner" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(cfg.owner || '')}" placeholder="seu-usuario"></label>
         <label class="field"><span>Repositório</span><input class="input" id="s-repo" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(cfg.repo || '')}" placeholder="stratify-data"></label>
@@ -449,17 +471,7 @@ function viewSettings() {
         <button class="btn primary" data-action="sync-save">Salvar e sincronizar</button>
         ${Sync.isConfigured(cfg) ? '<button class="btn ghost" data-action="sync-off">Desconectar</button>' : ''}
       </div>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2>Backup</h2></div>
-      <p class="card-sub">${d.transactions.length} lançamentos pontuais · ${d.recurring.length} fixos · ${d.categories.length} categorias</p>
-      <div class="btn-row">
-        <button class="btn soft" data-action="export">${icon('download', 16)} Exportar</button>
-        <button class="btn soft" data-action="import">${icon('upload', 16)} Importar</button>
-      </div>
-      <input type="file" id="import-file" accept="application/json,.json" hidden>
-    </section>
+    </details>
 
     <section class="group"><div class="group-head"><span>Categorias de despesa</span><button class="link" data-action="add-cat" data-kind="expense">+ Nova</button></div>
       <div class="card rows flush">${catList('expense')}</div></section>
@@ -474,17 +486,23 @@ function viewSettings() {
   `;
   const mount = () => {
     $('#import-file').addEventListener('change', async (ev) => {
-      const file = ev.target.files[0];
+      const input = ev.target;
+      const file = input.files[0];
       if (!file) return;
       try {
         const data = JSON.parse(await file.text());
         if (!Array.isArray(data.categories)) throw new Error();
-        if (!confirm('Substituir todos os dados atuais pelo backup?')) return;
-        replaceData(data, 'import');
-        save();
-        toast('Backup importado');
+        const when = data.updatedAt ? ` (salvo em ${new Date(data.updatedAt).toLocaleString('pt-BR')})` : '';
+        const summary = `${(data.transactions || []).length} pontuais e ${(data.recurring || []).length} fixos`;
+        if (confirm(`Importar backup com ${summary}${when}?\n\nOs dados atuais deste aparelho serão substituídos.`)) {
+          replaceData(data, 'import');
+          save();
+          toast('Backup importado');
+        }
       } catch {
         toast('Arquivo inválido');
+      } finally {
+        input.value = '';
       }
     });
   };
@@ -578,7 +596,7 @@ function openEntryForm(opts = {}) {
     </label>
     <label class="field"><span>Descrição</span><input class="input" data-bind="description" value="${esc(f.description)}" placeholder="${f.kind === 'income' ? (f.recurring ? 'Ex.: Salário' : 'Ex.: Freela, reembolso') : (f.recurring ? 'Ex.: Aluguel, internet' : 'Ex.: Mercado, Uber')}" enterkeyhint="done"></label>
     <div class="field"><span>Categoria</span>
-      <div class="cat-grid">${categoriesOf(f.kind).map((c) => `<button type="button" class="cat-pick ${f.categoryId === c.id ? 'on' : ''}" data-s="cat" data-id="${c.id}" style="--c:${c.color}"><span>${esc(c.icon)}</span>${esc(c.name)}</button>`).join('')}</div>
+      <div class="cat-grid">${categoriesOf(f.kind).map((c) => `<button type="button" class="cat-pick ${f.categoryId === c.id ? 'on' : ''}" data-s="cat" data-id="${c.id}" style="--c:${c.color}"><span>${catGlyph(c.icon, 20)}</span>${esc(c.name)}</button>`).join('')}</div>
     </div>
     ${!isEdit ? `<label class="switch"><input type="checkbox" data-bind="recurring" data-redraw ${f.recurring ? 'checked' : ''}><span class="switch-ui"></span><span>${f.kind === 'income' ? 'Receita fixa (todo mês)' : 'Conta fixa (todo mês)'}</span></label>` : ''}
     ${f.recurring ? `
@@ -748,17 +766,32 @@ function openBalanceForm() {
 }
 
 function openCategoryForm(cat, kind) {
-  const f = cat ? { ...cat } : { name: '', icon: '🏷️', color: PALETTE[0], kind };
+  const f = cat ? { ...cat } : { name: '', icon: 'tag', color: PALETTE[0], kind };
   const colors = [...PALETTE, NEUTRAL];
+  // Seleção de cor/ícone só atualiza a prévia, para não perder o foco do campo de nome.
+  const refreshPreview = (body) => {
+    body.querySelector('.cat-preview').outerHTML = catDot(f, 'lg cat-preview');
+    body.querySelectorAll('.swatch-btn').forEach((b) => b.classList.toggle('on', b.dataset.c === f.color));
+    body.querySelectorAll('.icon-pick').forEach((b) => b.classList.toggle('on', b.dataset.icon === f.icon));
+    body.querySelector('.icon-gallery').style.setProperty('--c', f.color);
+  };
   openSheet(() => `
     ${sheetHead(cat ? 'Editar categoria' : 'Nova categoria')}
-    <div class="form-grid">
-      <label class="field"><span>Emoji</span><input class="input emoji" data-bind="icon" value="${esc(f.icon)}" maxlength="4"></label>
+    <div class="cat-head">
+      ${catDot(f, 'lg cat-preview')}
       <label class="field"><span>Nome</span><input class="input" data-bind="name" value="${esc(f.name)}" placeholder="Ex.: Pets"></label>
     </div>
     <div class="field"><span>Cor</span><div class="swatches">${colors.map((c) => `<button type="button" class="swatch-btn ${f.color === c ? 'on' : ''}" style="background:${c}" data-s="color" data-c="${c}" aria-label="Cor ${c}"></button>`).join('')}</div></div>
-    <button class="btn primary block lg" data-s="save">Salvar</button>
-    ${cat ? '<button class="btn danger-ghost block" data-s="delete">Excluir categoria</button>' : ''}`,
+    <div class="field"><span>Ícone</span>
+      <div class="icon-gallery" style="--c:${f.color}">
+        ${ICON_GROUPS.map((g) => `<div class="icon-group-label">${g.label}</div>
+          <div class="icon-grid">${g.icons.map((n) => `<button type="button" class="icon-pick ${f.icon === n ? 'on' : ''}" data-s="icon" data-icon="${n}" aria-label="${n}">${catGlyph(n, 22)}</button>`).join('')}</div>`).join('')}
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn primary block lg" data-s="save">Salvar</button>
+      ${cat ? '<button class="btn danger-ghost block" data-s="delete">Excluir categoria</button>' : ''}
+    </div>`,
   (body, redraw) => {
     bindForm(body, f, redraw);
     body.addEventListener('click', (ev) => {
@@ -766,7 +799,8 @@ function openCategoryForm(cat, kind) {
       if (!el) return;
       const a = el.dataset.s;
       if (a === 'close') return closeSheet();
-      if (a === 'color') { f.color = el.dataset.c; body.querySelectorAll('.swatch-btn').forEach((b) => b.classList.toggle('on', b === el)); return; }
+      if (a === 'color') { f.color = el.dataset.c; return refreshPreview(body); }
+      if (a === 'icon') { f.icon = el.dataset.icon; return refreshPreview(body); }
       if (a === 'save') {
         if (!f.name.trim()) return toast('Dê um nome à categoria');
         f.name = f.name.trim();
@@ -786,16 +820,38 @@ function openCategoryForm(cat, kind) {
 
 // ---------------------------------------------------------------- actions
 
+const BACKUP_KEY = 'stratify:last-backup';
+const getLastBackup = () => localStorage.getItem(BACKUP_KEY);
+const backupOverdue = () => {
+  const last = getLastBackup();
+  const hasData = store.data.transactions.length + store.data.recurring.length > 0;
+  return hasData && (!last || (Date.now() - new Date(last + 'T12:00:00')) / 864e5 > 30);
+};
+function markBackup() {
+  localStorage.setItem(BACKUP_KEY, todayISO());
+  render();
+  toast('Backup exportado');
+}
+
+// No iPhone abre a folha de compartilhamento (Salvar em Arquivos); fora dele, baixa o arquivo.
 async function exportData() {
   const name = `stratify-backup-${todayISO()}.json`;
   const blob = new Blob([JSON.stringify(store.data, null, 2)], { type: 'application/json' });
   const file = new File([blob], name, { type: 'application/json' });
   if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Backup Stratify' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    try {
+      await navigator.share({ files: [file] });
+      return markBackup();
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
   }
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  markBackup();
 }
 
 const actions = {
@@ -852,7 +908,6 @@ const actions = {
     render();
   },
   export: () => exportData(),
-  import: () => $('#import-file').click(),
   reset: () => {
     if (!confirm('Apagar TODOS os dados deste aparelho?')) return;
     if (!confirm('Tem certeza? Faça um backup antes. Se a sincronização estiver ativa, o GitHub também será sobrescrito.')) return;

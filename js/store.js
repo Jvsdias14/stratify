@@ -9,13 +9,13 @@ export const NEUTRAL = '#8a90a2';
 
 function defaults() {
   const exp = [
-    ['Moradia', '🏠'], ['Alimentação', '🍽️'], ['Transporte', '🚗'], ['Saúde', '💊'],
-    ['Lazer', '🎉'], ['Assinaturas', '📺'], ['Compras', '🛍️'], ['Educação', '📚'],
+    ['Moradia', 'house'], ['Alimentação', 'utensils'], ['Transporte', 'car'], ['Saúde', 'pill'],
+    ['Lazer', 'party-popper'], ['Assinaturas', 'tv'], ['Compras', 'shopping-bag'], ['Educação', 'book-open'],
   ].map(([name, icon], i) => ({ id: uid(), name, icon, color: PALETTE[i], kind: 'expense' }));
-  exp.push({ id: uid(), name: 'Outros', icon: '📦', color: NEUTRAL, kind: 'expense' });
+  exp.push({ id: uid(), name: 'Outros', icon: 'package', color: NEUTRAL, kind: 'expense' });
   const inc = [
-    ['Salário', '💼', PALETTE[0]], ['Freelance', '💻', PALETTE[2]],
-    ['Rendimentos', '📈', PALETTE[6]], ['Outros', '💰', NEUTRAL],
+    ['Salário', 'briefcase', PALETTE[0]], ['Freelance', 'laptop', PALETTE[2]],
+    ['Rendimentos', 'trending-up', PALETTE[6]], ['Outros', 'wallet', NEUTRAL],
   ].map(([name, icon, color]) => ({ id: uid(), name, icon, color, kind: 'income' }));
 
   return {
@@ -39,13 +39,20 @@ function defaults() {
   };
 }
 
+// Emojis da primeira versão -> ícones da galeria.
+const EMOJI_TO_ICON = {
+  '🏠': 'house', '🍽️': 'utensils', '🚗': 'car', '💊': 'pill', '🎉': 'party-popper', '📺': 'tv', '🛍️': 'shopping-bag',
+  '📚': 'book-open', '📦': 'package', '💼': 'briefcase', '💻': 'laptop', '📈': 'trending-up', '💰': 'wallet', '🏷️': 'tag',
+};
+
 function normalize(data) {
   const base = defaults();
   if (!data || typeof data !== 'object') return base;
+  const categories = Array.isArray(data.categories) && data.categories.length ? data.categories : base.categories;
   return {
     ...base,
     ...data,
-    categories: Array.isArray(data.categories) && data.categories.length ? data.categories : base.categories,
+    categories: categories.map((c) => (EMOJI_TO_ICON[c.icon] ? { ...c, icon: EMOJI_TO_ICON[c.icon] } : c)),
     transactions: data.transactions || [],
     recurring: data.recurring || [],
     recurringStatus: data.recurringStatus || {},
@@ -93,7 +100,7 @@ export function resetData() {
 
 // ---- Categorias ----
 
-const FALLBACK_CAT = { id: '', name: 'Sem categoria', icon: '•', color: NEUTRAL };
+const FALLBACK_CAT = { id: '', name: 'Sem categoria', icon: 'circle-ellipsis', color: NEUTRAL };
 export const categoryById = (id) => store.data.categories.find((c) => c.id === id) || FALLBACK_CAT;
 export const categoriesOf = (kind) => store.data.categories.filter((c) => c.kind === kind);
 
