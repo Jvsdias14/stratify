@@ -75,21 +75,28 @@ export function donut(id, items) {
   });
 }
 
-export function incomeExpenseBars(id, labels, income, expense) {
+// Meses futuros (previsão) ficam com a mesma cor, mais clara.
+const faded = (hex) => hex + '66';
+
+export function incomeExpenseBars(id, labels, income, expense, future = []) {
+  const fill = (color) => labels.map((_, i) => (future[i] ? faded(color) : color));
   make(id, {
     type: 'bar',
     data: {
       labels,
       datasets: [
-        { label: 'Receitas', data: income, backgroundColor: COLORS.income, borderRadius: 4, categoryPercentage: 0.7, barPercentage: 0.85 },
-        { label: 'Despesas', data: expense, backgroundColor: COLORS.expense, borderRadius: 4, categoryPercentage: 0.7, barPercentage: 0.85 },
+        { label: 'Receitas', data: income, backgroundColor: fill(COLORS.income), borderRadius: 4, categoryPercentage: 0.7, barPercentage: 0.85 },
+        { label: 'Despesas', data: expense, backgroundColor: fill(COLORS.expense), borderRadius: 4, categoryPercentage: 0.7, barPercentage: 0.85 },
       ],
     },
     options: {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      scales: valueScales(),
-      plugins: { legend: { position: 'top', align: 'start' }, tooltip: moneyTooltip },
+      scales: { ...valueScales(), x: { ...valueScales().x, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } } },
+      plugins: {
+        legend: { position: 'top', align: 'start', labels: { generateLabels: (chart) => window.Chart.defaults.plugins.legend.labels.generateLabels(chart).map((l) => ({ ...l, fillStyle: chart.data.datasets[l.datasetIndex].backgroundColor.find((_, i) => !future[i]) || l.fillStyle })) } },
+        tooltip: { ...moneyTooltip, callbacks: { ...moneyTooltip.callbacks, title: (items) => items[0].label + (future[items[0].dataIndex] ? ' (previsão)' : '') } },
+      },
     },
   });
 }

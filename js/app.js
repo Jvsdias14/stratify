@@ -11,7 +11,10 @@ import {
   daysInMonth, monthLabel, monthShort, monthShortYear, dayLabel, dateBR,
 } from './utils.js';
 
-const ui = { view: 'home', prevView: 'home', month: currentYM(), filter: 'all', horizon: 12 };
+const ui = { view: 'home', prevView: 'home', month: currentYM(), filter: 'all', horizon: 12, barPreset: 'past', barShift: 0 };
+
+// Janelas do gráfico receitas × despesas: início relativo ao mês selecionado e quantidade de meses.
+const BAR_PRESETS = { past: { label: 'Passado', start: -5, span: 6 }, future: { label: 'Futuro', start: 0, span: 6 }, year: { label: '12 meses', start: -5, span: 12 } };
 const $ = (s, r = document) => r.querySelector(s);
 
 const TITLES = { home: 'Visão geral', list: 'Lançamentos', fixed: 'Fixos', invest: 'Rendimentos', settings: 'Ajustes' };
@@ -112,8 +115,11 @@ function viewHome() {
   const rest = cats.slice(6).reduce((s, c) => s + c.value, 0);
   if (rest > 0) items.push({ label: 'Demais', value: round2(rest), color: NEUTRAL, icon: '…' });
 
-  const months = Array.from({ length: 6 }, (_, i) => addMonths(ym, i - 5));
+  const preset = BAR_PRESETS[ui.barPreset];
+  const firstMonth = addMonths(ym, preset.start + ui.barShift * preset.span);
+  const months = Array.from({ length: preset.span }, (_, i) => addMonths(firstMonth, i));
   const series = months.map((m) => monthTotals(m));
+  const future = months.map((m) => m > currentYM());
 
   const ids = new Set([...Object.keys(t.byCat), ...Object.keys(p.byCat)]);
   const comp = [...ids].map((id) => ({ cat: categoryById(id), cur: t.byCat[id] || 0, prev: p.byCat[id] || 0 })).sort((a, b) => b.cur - a.cur || b.prev - a.prev);
@@ -174,11 +180,18 @@ function viewHome() {
     </section>` : ''}
 
     <section class="card">
-      <div class="card-head"><h2>Receitas × despesas</h2><span class="muted">últimos 6 meses</span></div>
-      <div class="chart-box"><canvas id="ch-bars" role="img" aria-label="Receitas e despesas dos últimos 6 meses"></canvas></div>
+      <div class="card-head"><h2>Receitas × despesas</h2></div>
+      <div class="seg sm">${Object.entries(BAR_PRESETS).map(([k, p]) => `<button class="${ui.barPreset === k ? 'on' : ''}" data-action="bar-preset" data-preset="${k}">${p.label}</button>`).join('')}</div>
+      <div class="range-nav">
+        <button class="icon-btn sm" data-action="bar-shift" data-step="-1" aria-label="Período anterior">${icon('left', 18)}</button>
+        <span>${monthShortYear(months[0])} – ${monthShortYear(months[months.length - 1])}</span>
+        <button class="icon-btn sm" data-action="bar-shift" data-step="1" aria-label="Próximo período">${icon('right', 18)}</button>
+      </div>
+      <div class="chart-box"><canvas id="ch-bars" role="img" aria-label="Receitas e despesas de ${monthShortYear(months[0])} a ${monthShortYear(months[months.length - 1])}"></canvas></div>
+      ${future.some(Boolean) ? '<p class="muted small chart-note">Barras claras = previsão (contas fixas e lançamentos já agendados).</p>' : ''}
       <table class="mini-table">
         <thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Saldo</th></tr></thead>
-        <tbody>${months.map((m, i) => `<tr><td>${monthShortYear(m)}</td><td>${money(series[i].income)}</td><td>${money(series[i].expense)}</td><td class="${series[i].balance < 0 ? 'neg' : ''}">${money(series[i].balance)}</td></tr>`).reverse().join('')}</tbody>
+        <tbody>${months.map((m, i) => `<tr class="${future[i] ? 'forecast' : ''}"><td>${monthShortYear(m)}${future[i] ? ' <span class="badge soft">prev.</span>' : ''}</td><td>${money(series[i].income)}</td><td>${money(series[i].expense)}</td><td class="${series[i].balance < 0 ? 'neg' : ''}">${money(series[i].balance)}</td></tr>`).join('')}</tbody>
       </table>
     </section>
 
@@ -209,7 +222,7 @@ function viewHome() {
       return;
     }
     if (items.length) Charts.donut('ch-donut', items);
-    Charts.incomeExpenseBars('ch-bars', months.map(monthShort), series.map((s) => s.income), series.map((s) => s.expense));
+    Charts.incomeExpenseBars('ch-bars', months.map(preset.span > 6 ? monthShortYear : monthShort), series.map((s) => s.income), series.map((s) => s.expense), future);
     const dim = Math.max(daysInMonth(ym), daysInMonth(prevYm));
     const upto = isCurrent ? Number(todayISO().slice(8)) : null;
     const cur = cumulativeExpense(ym, upto);
@@ -817,6 +830,8 @@ const actions = {
     toast(st.paid ? 'Marcado como pendente' : 'Pago ✓');
   },
   filter: (el) => { ui.filter = el.dataset.filter; render(); },
+  'bar-preset': (el) => { ui.barPreset = el.dataset.preset; ui.barShift = 0; render(); },
+  'bar-shift': (el) => { ui.barShift += Number(el.dataset.step); render(); },
   horizon: (el) => { ui.horizon = Number(el.dataset.h); render(); },
   'update-balance': () => openBalanceForm(),
   'edit-cat': (el) => openCategoryForm(store.data.categories.find((c) => c.id === el.dataset.id)),
