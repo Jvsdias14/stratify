@@ -12,7 +12,7 @@ import {
   daysInMonth, monthLabel, monthShort, monthShortYear, dayLabel, dateBR,
 } from './utils.js';
 
-const ui = { view: 'home', prevView: 'home', month: currentYM(), filter: 'all', horizon: 12, barPreset: 'past', barShift: 0 };
+const ui = { view: 'home', prevView: 'home', month: currentYM(), filter: 'all', catFilter: 'all', horizon: 12, barPreset: 'past', barShift: 0 };
 
 // Janelas do gráfico receitas × despesas: início relativo ao mês selecionado e quantidade de meses.
 const BAR_PRESETS = { past: { label: 'Passado', start: -5, span: 6 }, future: { label: 'Futuro', start: 0, span: 6 }, year: { label: '12 meses', start: -5, span: 12 } };
@@ -271,7 +271,17 @@ function viewHome() {
 function viewList() {
   const t = monthTotals(ui.month);
   const filters = { all: 'Todos', expense: 'Despesas', income: 'Receitas', recurring: 'Fixos', once: 'Pontuais' };
-  const entries = t.entries.filter((e) => ui.filter === 'all' || e.kind === ui.filter || e.source === ui.filter);
+  const byType = t.entries.filter((e) => ui.filter === 'all' || e.kind === ui.filter || e.source === ui.filter);
+  // Filtro de categoria fica numa segunda faixa e combina com o de tipo. Só lista categorias com lançamentos
+  // no recorte atual (mais a selecionada, para poder desmarcá-la).
+  const catOf = (e) => categoryById(e.categoryId);
+  const used = new Map();
+  for (const e of byType) { const c = catOf(e); used.set(c.id, c); }
+  if (ui.catFilter !== 'all' && !used.has(ui.catFilter)) used.set(ui.catFilter, categoryById(ui.catFilter));
+  const catChips = [...used.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const entries = ui.catFilter === 'all' ? byType : byType.filter((e) => catOf(e).id === ui.catFilter);
+  const sumKind = (k) => round2(entries.filter((e) => e.kind === k).reduce((s, e) => s + e.amount, 0));
+  const totals = ui.catFilter === 'all' ? t : { income: sumKind('income'), expense: sumKind('expense') };
   const groups = new Map();
   for (const e of entries) groups.set(e.date, [...(groups.get(e.date) || []), e]);
 
@@ -279,9 +289,13 @@ function viewList() {
     <div class="chips scroll" role="tablist">
       ${Object.entries(filters).map(([k, v]) => `<button class="chip ${ui.filter === k ? 'on' : ''}" data-action="filter" data-filter="${k}" role="tab" aria-selected="${ui.filter === k}">${v}</button>`).join('')}
     </div>
+    ${catChips.length > 1 || ui.catFilter !== 'all' ? `<div class="chips scroll cat-chips" role="tablist" aria-label="Filtrar por categoria">
+      <button class="chip sm ${ui.catFilter === 'all' ? 'on' : ''}" data-action="cat-filter" data-id="all" role="tab" aria-selected="${ui.catFilter === 'all'}">Todas as categorias</button>
+      ${catChips.map((c) => `<button class="chip sm cat-chip ${ui.catFilter === c.id ? 'on' : ''}" style="--c:${c.color}" data-action="cat-filter" data-id="${c.id}" role="tab" aria-selected="${ui.catFilter === c.id}"><span class="cat-chip-icon">${catGlyph(c.icon, 15)}</span>${esc(c.name)}</button>`).join('')}
+    </div>` : ''}
     <div class="stat-row two">
-      <div class="stat"><span>Receitas</span><strong class="pos">${money(t.income)}</strong></div>
-      <div class="stat"><span>Despesas</span><strong>${money(t.expense)}</strong></div>
+      <div class="stat"><span>Receitas</span><strong class="pos">${money(totals.income)}</strong></div>
+      <div class="stat"><span>Despesas</span><strong>${money(totals.expense)}</strong></div>
     </div>
     ${groups.size ? [...groups].map(([date, list]) => `
       <section class="group">
@@ -988,6 +1002,7 @@ const actions = {
     toast(st.paid ? 'Marcado como pendente' : 'Pago ✓');
   },
   filter: (el) => { ui.filter = el.dataset.filter; render(); },
+  'cat-filter': (el) => { ui.catFilter = el.dataset.id; render(); },
   'bar-preset': (el) => { ui.barPreset = el.dataset.preset; ui.barShift = 0; render(); },
   'bar-shift': (el) => { ui.barShift += Number(el.dataset.step); render(); },
   horizon: (el) => { ui.horizon = Number(el.dataset.h); render(); },

@@ -178,6 +178,10 @@ svg { flex-shrink: 0; }
 .chips.scroll::-webkit-scrollbar { display: none; }
 .chip { padding: 8px 14px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); font-weight: 600; font-size: 13.5px; white-space: nowrap; color: var(--ink-2); min-height: 36px; }
 .chip.on { background: var(--ink); color: #fff; }
+.chip.sm { padding: 6px 12px; font-size: 12.5px; min-height: 32px; display: inline-flex; align-items: center; gap: 6px; }
+.cat-chips { margin-top: -4px; }
+.cat-chip-icon { display: grid; place-items: center; color: color-mix(in srgb, var(--c) 82%, black); }
+.cat-chip.on { background: color-mix(in srgb, var(--c) 14%, white); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--c); }
 
 .seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 2px; }
 .seg button { flex: 1; padding: 9px 10px; border-radius: 10px; font-weight: 600; color: var(--ink-2); font-size: 14px; }
