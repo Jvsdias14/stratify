@@ -1,5 +1,5 @@
 // Service worker: deixa o app abrir offline. Altere VERSION a cada deploy para forçar atualização.
-const VERSION = 'stratify-v6';
+const VERSION = 'stratify-v7';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/app.js', 'js/store.js', 'js/finance.js', 'js/sync.js', 'js/charts.js', 'js/icons.js', 'js/category-icons.js', 'js/utils.js',

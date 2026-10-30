@@ -39,6 +39,8 @@ function defaults() {
       history: [],      // [{ date, balance }]
     },
     goals: { monthlySurplus: 0 }, // meta de sobra mensal (0 = sem meta)
+    // Dinheiro parado: valores emprestados, resgates pendentes, dívidas. Ficam fora dos totais do mês.
+    pending: [], // [{ id, kind: 'income'|'expense', description, amount, date, due, settledAt }]
   };
 }
 
@@ -61,6 +63,7 @@ function normalize(data) {
     recurringStatus: data.recurringStatus || {},
     investments: { ...base.investments, ...(data.investments || {}) },
     goals: { ...base.goals, ...(data.goals || {}) },
+    pending: data.pending || [],
   };
 }
 

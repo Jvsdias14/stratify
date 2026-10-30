@@ -18,7 +18,7 @@ const ui = { view: 'home', prevView: 'home', month: currentYM(), filter: 'all', 
 const BAR_PRESETS = { past: { label: 'Passado', start: -5, span: 6 }, future: { label: 'Futuro', start: 0, span: 6 }, year: { label: '12 meses', start: -5, span: 12 } };
 const $ = (s, r = document) => r.querySelector(s);
 
-const TITLES = { home: 'Visão geral', list: 'Lançamentos', fixed: 'Fixos', invest: 'Rendimentos', settings: 'Ajustes' };
+const TITLES = { home: 'Visão geral', list: 'Lançamentos', fixed: 'Fixos', invest: 'Rendimentos', pending: 'Dinheiro parado', settings: 'Ajustes' };
 const MONTH_VIEWS = ['home', 'list', 'fixed'];
 
 // ---------------------------------------------------------------- render
@@ -585,7 +585,60 @@ function viewSettings() {
   return { html, mount };
 }
 
-const VIEWS = { home: viewHome, list: viewList, fixed: viewFixed, invest: viewInvest, settings: viewSettings };
+const VIEWS = { home: viewHome, list: viewList, fixed: viewFixed, invest: viewInvest, pending: viewPending, settings: viewSettings };
+
+// Valores "parados" (a receber de alguém, a resgatar, a pagar). Não entram nos totais do mês até virarem lançamento.
+const PENDING_LOOK = {
+  income: { color: PALETTE[2], icon: 'hand-coins', label: 'A receber', done: 'Recebido', settle: 'Marcar como recebido' },
+  expense: { color: PALETTE[1], icon: 'hand-coins', label: 'A pagar', done: 'Pago', settle: 'Marcar como pago' },
+};
+
+function viewPending() {
+  const all = store.data.pending;
+  const open = all.filter((p) => !p.settledAt).sort((a, b) => ((a.due || '9') < (b.due || '9') ? -1 : 1));
+  const settled = all.filter((p) => p.settledAt).sort((a, b) => (a.settledAt < b.settledAt ? 1 : -1)).slice(0, 15);
+  const sum = (k) => round2(open.filter((p) => p.kind === k).reduce((s, p) => s + p.amount, 0));
+  const inc = sum('income'), exp = sum('expense');
+  const today = todayISO();
+
+  const row = (p) => {
+    const look = PENDING_LOOK[p.kind];
+    const late = !p.settledAt && p.due && p.due < today;
+    const sub = p.settledAt
+      ? `<span class="badge ok">${icon('check', 11)} ${look.done} em ${dateBR(p.settledAt)}</span>`
+      : `Desde ${dateBR(p.date)}${p.due ? `<span class="badge ${late ? 'warn' : 'soft'}">${late ? 'Atrasado · ' : 'Previsto '}${dateBR(p.due)}</span>` : ''}`;
+    return `<div class="row ${p.settledAt ? 'dim' : ''}" role="button" tabindex="0" data-action="open-pending" data-id="${p.id}">
+      ${catDot({ color: look.color, icon: look.icon })}
+      <span class="row-main"><span class="row-title">${esc(p.description)}</span><span class="row-sub">${sub}</span></span>
+      <span class="row-amount ${p.kind === 'income' ? 'pos' : ''}">${money(p.amount)}</span>
+      ${p.settledAt ? '' : `<button class="check-btn" data-action="settle-pending" data-id="${p.id}" aria-label="${look.settle}">${icon('check', 16)}</button>`}
+    </div>`;
+  };
+  const list = (k) => open.filter((p) => p.kind === k);
+
+  const html = `
+    <section class="card commit">
+      <div class="commit-top"><div><span class="muted">Saldo que ainda volta para você</span><strong class="${inc - exp >= 0 ? 'pos' : ''}">${money(inc - exp)}</strong></div>
+        <div class="commit-sums"><span class="pos">+ ${money(inc)}</span><span>− ${money(exp)}</span></div></div>
+      <p class="muted small">Empréstimos, resgates e valores pendentes. Não entram nos totais do mês até você lançá-los.</p>
+    </section>
+
+    <div class="btn-row">
+      <button class="btn soft" data-action="add-pending" data-kind="income">${icon('plus', 16)} A receber</button>
+      <button class="btn soft" data-action="add-pending" data-kind="expense">${icon('plus', 16)} A pagar</button>
+    </div>
+
+    <section class="group"><div class="group-head"><span>A receber</span><span>${money(inc)}</span></div>
+      <div class="card rows flush">${list('income').length ? list('income').map(row).join('') : '<p class="muted pad">Dinheiro emprestado, resgate pendente no banco, reembolso…</p>'}</div></section>
+
+    <section class="group"><div class="group-head"><span>A pagar</span><span>${money(exp)}</span></div>
+      <div class="card rows flush">${list('expense').length ? list('expense').map(row).join('') : '<p class="muted pad">Valores que você deve e ainda vai pagar.</p>'}</div></section>
+
+    ${settled.length ? `<section class="group"><div class="group-head"><span>Resolvidos</span></div>
+      <div class="card rows flush">${settled.map(row).join('')}</div></section>` : ''}
+  `;
+  return { html };
+}
 
 // ---------------------------------------------------------------- sheet / toast
 
@@ -656,7 +709,7 @@ function openEntryForm(opts = {}) {
   const f = tx ? { ...tx, recurring: false }
     : rec ? { ...rec, recurring: true, end: rec.end || '' }
     : { kind: opts.kind || 'expense', recurring: !!opts.recurring, amount: 0, description: '', categoryId: null,
-        date: defaultDate(), day: Number(defaultDate().slice(8)), start: ui.month, end: '' };
+        date: defaultDate(), day: Number(defaultDate().slice(8)), start: ui.month, end: '', ...opts.prefill };
   const fixCategory = () => {
     if (!f.categoryId || categoryById(f.categoryId).kind !== f.kind) f.categoryId = categoriesOf(f.kind)[0]?.id || null;
   };
@@ -815,6 +868,66 @@ function openOccurrence(recId, ym) {
       if (a === 'skip') { setStatus(rec.id, ym, { skip: !st.skip, paid: undefined }); save(); return redraw(); }
       if (a === 'edit') { closeSheet(); setTimeout(() => openEntryForm({ rec, effective: ym }), 260); }
     });
+  });
+}
+
+function openPendingForm(item, kind) {
+  const f = item ? { ...item, due: item.due || '' } : { kind, description: '', amount: 0, date: todayISO(), due: '' };
+  const look = () => PENDING_LOOK[f.kind];
+  const build = () => `
+    ${sheetHead(item ? 'Dinheiro parado' : 'Novo valor parado')}
+    ${seg('kind', f.kind, [['income', 'A receber'], ['expense', 'A pagar']])}
+    <label class="amount-field ${f.kind}"><span>Valor</span><input data-bind="amount" data-type="money" inputmode="numeric" placeholder="R$ 0,00" value="${f.amount ? money(f.amount) : ''}" autocomplete="off"></label>
+    <label class="field"><span>Descrição</span><input class="input" data-bind="description" value="${esc(f.description)}" placeholder="${f.kind === 'income' ? 'Ex.: Emprestado ao João, resgate CDB' : 'Ex.: Devo à Maria'}" enterkeyhint="done"></label>
+    <div class="form-grid">
+      <label class="field"><span>Desde</span><input class="input" type="date" data-bind="date" value="${f.date}"></label>
+      <label class="field"><span>Previsão (opcional)</span><input class="input" type="date" data-bind="due" value="${f.due}"></label>
+    </div>
+    <button class="btn primary block lg" data-s="save">Salvar</button>
+    ${item && !item.settledAt ? `<div class="btn-row">
+        <button class="btn soft" data-s="settle">${icon('check', 16)} ${look().done}</button>
+        <button class="btn ghost" data-s="settle-post">${look().done} e lançar</button></div>
+      <p class="muted small">"${look().done} e lançar" abre um lançamento já preenchido para registrar a ${f.kind === 'income' ? 'receita' : 'despesa'} no mês.</p>` : ''}
+    ${item?.settledAt ? '<button class="btn ghost block" data-s="reopen">Reabrir (ainda pendente)</button>' : ''}
+    ${item ? '<button class="btn danger-ghost block" data-s="delete">Excluir</button>' : ''}`;
+
+  openSheet(build, (body, redraw) => {
+    bindForm(body, f, redraw);
+    const valid = () => {
+      if (!(f.amount > 0)) return toast('Informe um valor'), false;
+      if (!f.description.trim()) return toast('Dê uma descrição'), false;
+      if (!f.date) return toast('Informe a data'), false;
+      return true;
+    };
+    const fields = () => ({ kind: f.kind, description: f.description.trim(), amount: round2(f.amount), date: f.date, due: f.due || null });
+    const target = () => store.data.pending.find((p) => p.id === item.id);
+    body.addEventListener('click', (ev) => {
+      const el = ev.target.closest('[data-s]');
+      if (!el) return;
+      const a = el.dataset.s;
+      if (a === 'close') return closeSheet();
+      if (a === 'set') { f[el.dataset.key] = el.dataset.value; return redraw(); }
+      if (a === 'save') {
+        if (!valid()) return;
+        if (item) Object.assign(target(), fields());
+        else store.data.pending.push({ id: uid(), ...fields(), settledAt: null });
+        return done('Salvo');
+      }
+      if (a === 'settle' || a === 'settle-post') {
+        if (!valid()) return;
+        Object.assign(target(), fields(), { settledAt: todayISO() });
+        done(`${look().done} ✓`);
+        // Abre o lançamento já preenchido para escolher a categoria e confirmar.
+        if (a === 'settle-post') setTimeout(() => openEntryForm({ kind: f.kind, prefill: { amount: round2(f.amount), description: f.description.trim() } }), 260);
+        return;
+      }
+      if (a === 'reopen') { target().settledAt = null; return done('Reaberto'); }
+      if (a === 'delete' && confirm('Excluir este valor?')) {
+        store.data.pending = store.data.pending.filter((p) => p.id !== item.id);
+        done('Excluído');
+      }
+    });
+    if (!item) setTimeout(() => body.querySelector('[data-bind="amount"]')?.focus(), 350);
   });
 }
 
@@ -989,6 +1102,14 @@ const actions = {
     const [type, id, ym] = el.dataset.id.split(':');
     if (type === 't') openEntryForm({ tx: store.data.transactions.find((t) => t.id === id) });
     else openOccurrence(id, ym);
+  },
+  'add-pending': (el) => openPendingForm(null, el.dataset.kind),
+  'open-pending': (el) => openPendingForm(store.data.pending.find((p) => p.id === el.dataset.id)),
+  'settle-pending': (el) => {
+    const p = store.data.pending.find((x) => x.id === el.dataset.id);
+    p.settledAt = todayISO();
+    save();
+    toast(`${PENDING_LOOK[p.kind].done} ✓`);
   },
   'open-rec': (el) => openOccurrence(el.dataset.rec, ui.month),
   'edit-rec': (el) => {
