@@ -122,9 +122,6 @@ function viewHome() {
   const series = months.map((m) => monthTotals(m));
   const future = months.map((m) => m > currentYM());
 
-  const ids = new Set([...Object.keys(t.byCat), ...Object.keys(p.byCat)]);
-  const comp = [...ids].map((id) => ({ cat: categoryById(id), cur: t.byCat[id] || 0, prev: p.byCat[id] || 0 })).sort((a, b) => b.cur - a.cur || b.prev - a.prev);
-  const maxComp = Math.max(1, ...comp.flatMap((c) => [c.cur, c.prev]));
 
   const upcoming = t.entries.filter((e) => e.source === 'recurring' && e.kind === 'expense' && !e.paid).sort((a, b) => (a.date < b.date ? -1 : 1));
 
@@ -236,19 +233,7 @@ function viewHome() {
       <div class="chart-box"><canvas id="ch-cum" role="img" aria-label="Gasto acumulado no mês comparado ao mês anterior"></canvas></div>
     </section>
 
-    ${comp.length ? `
-    <section class="card">
-      <div class="card-head"><h2>Mês a mês por categoria</h2><span class="muted">vs ${monthShort(prevYm).toLowerCase()}</span></div>
-      <div class="comp-legend"><span><i class="swatch" style="background:${Charts.COLORS.current}"></i>${monthShort(ym)}</span><span><i class="swatch" style="background:${Charts.COLORS.previous}"></i>${monthShort(prevYm)}</span></div>
-      <ul class="comp-list">
-        ${comp.map((c) => `<li>
-          <div class="comp-top"><span class="comp-name">${catGlyph(c.cat.icon, 15)}${esc(c.cat.name)}</span><span class="comp-val">${money(c.cur)} ${deltaChip(c.cur, c.prev)}</span></div>
-          <div class="comp-bar"><i style="width:${(c.cur / maxComp) * 100}%;background:${Charts.COLORS.current}"></i></div>
-          <div class="comp-bar prev"><i style="width:${(c.prev / maxComp) * 100}%;background:${Charts.COLORS.previous}"></i></div>
-          <div class="comp-prev muted">${monthShort(prevYm)}: ${money(c.prev)}</div>
-        </li>`).join('')}
-      </ul>
-    </section>` : ''}
+    ${categoryGoalsCard(ym, t)}
   `;
 
   const mount = () => {
@@ -266,6 +251,46 @@ function viewHome() {
     Charts.cumulativeLines('ch-cum', Array.from({ length: dim }, (_, i) => i + 1), cur, prev, [monthShort(ym), monthShort(prevYm)]);
   };
   return { html, mount };
+}
+
+// Metas (limites) de gasto por categoria no mês; o que não tem meta própria cai em "Outros".
+function categoryGoalsCard(ym, t) {
+  const { byCategory, others } = store.data.goals;
+  const ids = Object.keys(byCategory).filter((id) => byCategory[id] > 0 && categoryById(id).id);
+  if (!ids.length && !others) {
+    return `<section class="card">
+      <div class="card-head"><h2>Metas por categoria</h2><button class="link" data-action="edit-cat-goals">Definir metas</button></div>
+      <p class="card-sub">Defina quanto quer gastar por mês em cada categoria. O que não tiver meta própria entra em "Outros".</p>
+    </section>`;
+  }
+  const goalSpent = ids.reduce((s, id) => s + (t.byCat[id] || 0), 0);
+  const rows = ids.map((id) => {
+    const cat = categoryById(id);
+    return { name: cat.name, icon: cat.icon, color: cat.color, spent: t.byCat[id] || 0, limit: byCategory[id] };
+  }).sort((a, b) => b.spent / b.limit - a.spent / a.limit);
+  rows.push({ name: 'Outros', icon: 'circle-ellipsis', color: NEUTRAL, spent: round2(t.expense - goalSpent), limit: others || 0 });
+  const limitTotal = rows.reduce((s, r) => s + r.limit, 0);
+  // Marca de ritmo: quanto do mês já passou (só no mês atual).
+  const pace = ym === currentYM() ? (Number(todayISO().slice(8)) / daysInMonth(ym)) * 100 : null;
+
+  const row = (r) => {
+    const pct = r.limit ? (r.spent / r.limit) * 100 : 0;
+    const over = r.limit && r.spent > r.limit;
+    const status = !r.limit ? '<span class="muted">sem meta</span>'
+      : over ? `<span class="neg">Estourou ${money(r.spent - r.limit)}</span>`
+      : `<span class="muted">Restam ${money(r.limit - r.spent)}</span>`;
+    return `<li>
+      <div class="comp-top"><span class="comp-name"><span class="budget-icon" style="color:color-mix(in srgb, ${r.color} 82%, black)">${catGlyph(r.icon, 15)}</span>${esc(r.name)}</span>
+        <span class="comp-val">${money(r.spent)}${r.limit ? `<span class="muted"> / ${money(r.limit)}</span>` : ''}</span></div>
+      <div class="budget-bar ${over ? 'over' : ''}">${r.limit ? `<i style="width:${Math.min(100, pct)}%;background:${over ? 'var(--neg)' : r.color}"></i>` : ''}${r.limit && pace != null ? `<b style="left:${pace}%"></b>` : ''}</div>
+      <div class="budget-sub">${status}${r.limit ? `<span class="muted">${num(pct, 0)}%</span>` : ''}</div>
+    </li>`;
+  };
+  return `<section class="card">
+    <div class="card-head"><h2>Metas por categoria</h2><button class="link" data-action="edit-cat-goals">Editar</button></div>
+    <p class="card-sub">Gasto ${ym >= currentYM() ? 'previsto ' : ''}em ${monthShort(ym).toLowerCase()}: <strong>${money(t.expense)}</strong>${limitTotal ? ` de <strong>${money(limitTotal)}</strong> planejados` : ''}.${pace != null ? ' A marca na barra indica quanto do mês já passou.' : ''}</p>
+    <ul class="comp-list">${rows.map(row).join('')}</ul>
+  </section>`;
 }
 
 function viewList() {
@@ -954,6 +979,38 @@ function openBalanceForm() {
   });
 }
 
+function openCategoryGoalsForm() {
+  const goals = store.data.goals;
+  // A categoria "Outros" já é o próprio balde de "Outros", então não ganha campo separado.
+  const cats = categoriesOf('expense').filter((c) => c.name.trim().toLowerCase() !== 'outros');
+  const f = { others: goals.others || 0 };
+  for (const c of cats) f[c.id] = goals.byCategory[c.id] || 0;
+  const field = (key, label, glyph, color) => `<label class="budget-field">
+      <span class="cat-dot" style="--c:${color}" aria-hidden="true">${catGlyph(glyph, 18)}</span>
+      <span class="budget-label">${label}</span>
+      <input class="input" data-bind="${key}" data-type="money" inputmode="numeric" placeholder="Sem meta" value="${f[key] ? money(f[key]) : ''}" autocomplete="off">
+    </label>`;
+  openSheet(() => `
+    ${sheetHead('Metas por categoria')}
+    <p class="card-sub">Limite de gasto por mês. Deixe em branco para a categoria entrar em "Outros".</p>
+    <div class="budget-form">
+      ${cats.map((c) => field(c.id, esc(c.name), c.icon, c.color)).join('')}
+      ${field('others', 'Outros <span class="muted small">+ sem meta</span>', 'circle-ellipsis', NEUTRAL)}
+    </div>
+    <button class="btn primary block lg" data-s="save">Salvar metas</button>`,
+  (body, redraw) => {
+    bindForm(body, f, redraw);
+    body.addEventListener('click', (ev) => {
+      const a = ev.target.closest('[data-s]')?.dataset.s;
+      if (a === 'close') return closeSheet();
+      if (a !== 'save') return;
+      goals.byCategory = Object.fromEntries(cats.filter((c) => f[c.id] > 0).map((c) => [c.id, round2(f[c.id])]));
+      goals.others = round2(f.others || 0);
+      done('Metas salvas');
+    });
+  });
+}
+
 function openGoalForm() {
   const goals = store.data.goals;
   const f = { amount: goals.monthlySurplus || 0 };
@@ -1131,6 +1188,7 @@ const actions = {
   'inv-mode': (el) => { ui.invDraft.depositMode = el.dataset.mode; render(); },
   'inv-save': () => saveInvParams(),
   'edit-goal': () => openGoalForm(),
+  'edit-cat-goals': () => openCategoryGoalsForm(),
   'edit-cat': (el) => openCategoryForm(store.data.categories.find((c) => c.id === el.dataset.id)),
   'add-cat': (el) => openCategoryForm(null, el.dataset.kind),
   'close-sheet': () => closeSheet(),

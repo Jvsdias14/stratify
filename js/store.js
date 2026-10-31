@@ -38,7 +38,9 @@ function defaults() {
       includeSurplus: true,
       history: [],      // [{ date, balance }]
     },
-    goals: { monthlySurplus: 0 }, // meta de sobra mensal (0 = sem meta)
+    // Meta de sobra mensal (0 = sem meta) e limites de gasto mensais por categoria; categorias sem limite
+    // próprio somam no limite "Outros" (others).
+    goals: { monthlySurplus: 0, byCategory: {}, others: 0 },
     // Dinheiro parado: valores emprestados, resgates pendentes, dívidas. Ficam fora dos totais do mês.
     pending: [], // [{ id, kind: 'income'|'expense', description, amount, date, due, settledAt }]
   };
@@ -62,7 +64,7 @@ function normalize(data) {
     recurring: data.recurring || [],
     recurringStatus: data.recurringStatus || {},
     investments: { ...base.investments, ...(data.investments || {}) },
-    goals: { ...base.goals, ...(data.goals || {}) },
+    goals: { ...base.goals, ...(data.goals || {}), byCategory: { ...(data.goals?.byCategory || {}) } },
     pending: data.pending || [],
   };
 }
