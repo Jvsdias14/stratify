@@ -667,7 +667,12 @@ function viewPending() {
 
 // ---------------------------------------------------------------- sheet / toast
 
+// Timer que limpa o sheet após a animação de fechamento; abrir outro sheet logo em seguida precisa cancelá-lo,
+// senão ele apaga o sheet novo (acontecia em aparelhos mais lentos ao ir de um sheet para outro).
+let sheetCloseTimer;
+
 function openSheet(build, setup) {
+  clearTimeout(sheetCloseTimer);
   const root = $('#sheet-root');
   root.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
     <div class="sheet" role="dialog" aria-modal="true"><div class="sheet-grabber"></div><div class="sheet-body"></div></div>`;
@@ -683,7 +688,8 @@ function closeSheet() {
   const root = $('#sheet-root');
   root.classList.remove('open');
   document.body.classList.remove('sheet-open');
-  setTimeout(() => !root.classList.contains('open') && (root.innerHTML = ''), 280);
+  clearTimeout(sheetCloseTimer);
+  sheetCloseTimer = setTimeout(() => (root.innerHTML = ''), 280);
 }
 
 let toastTimer;

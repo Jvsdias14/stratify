@@ -43,6 +43,7 @@ body {
 }
 body.sheet-open { overflow: hidden; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+[role="button"] { cursor: pointer; } /* iOS só entrega cliques delegados em elementos "clicáveis" */
 h1, h2, p { margin: 0; }
 svg { flex-shrink: 0; }
 .muted { color: var(--muted); }
